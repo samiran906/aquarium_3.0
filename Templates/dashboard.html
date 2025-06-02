@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Dashboard</title>
+</head>
+<body>
+    <h1>Aquarium Dashboard</h1>
+
+    <h2>Sensors</h2>
+    <ul id="sensor-list">
+        {% for key, value in sensors.items() %}
+            <li>{{ key }}: <span id="sensor-{{ key }}">{{ value }}</span></li>
+        {% endfor %}
+    </ul>
+
+    <h2>Actuators</h2>
+    <ul id="actuator-list">
+        {% for key, value in actuators.items() %}
+            <li>
+                {{ key }}
+                <input type="checkbox" id="{{ key }}" {% if value %}checked{% endif %}
+                       onchange="toggleActuator('{{ key }}')">
+            </li>
+        {% endfor %}
+    </ul>
+
+    <h2>Flags</h2>
+    <ul id="flag-list">
+        {% for key, value in flags.items() %}
+            <li>
+                {{ key }}
+                {% if value is boolean %}
+                    <input type="checkbox" id="flag-{{ key }}" {% if value %}checked{% endif %}
+                           onchange="updateFlag('{{ key }}')">
+                {% else %}
+                    <input type="number" id="flag-{{ key }}" value="{{ value }}"
+                           onchange="updateFlag('{{ key }}')">
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+
+    <script src="/static/js/socket.js"></script>
+</body>
+</html>
