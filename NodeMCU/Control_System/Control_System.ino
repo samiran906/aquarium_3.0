@@ -25,7 +25,6 @@
 #define autoFeeder_BUS  D3
 #define co2_BUS         7
 #define thermostat_BUS  2
-#define light_duration  7
 /*////////////////////////////////////////////////////////////////
 *******************NODEMCU GPIO Definitions***********************
 ////////////////////////////////////////////////////////////////*/
@@ -48,6 +47,7 @@ bool cloudResetFlag = 0;
 uint8_t cloudAutoFeederFlagStatus = 0;
 uint8_t cloudSeasonSetting = 0;
 uint8_t cloudAutoFeederDuration = 0;
+uint8_t cloudLightDuration = 7;
 /*////////////////////////////////////////////////////////////////
 *************Variables for storing cloud flag values**************
 ////////////////////////////////////////////////////////////////*/
@@ -72,6 +72,7 @@ const char* server_host = "192.168.1.10"; //IP address of Flask server
 const int server_port = 5000;
 const char* ws_path = "/ws";
 const char* cloudTimeURL = "http://192.168.1.10:5000/api/time";
+const char* heartbeatURL = "http://192.168.1.10:5000/heartbeat";
 /*////////////////////////////////////////////////////////////////
 ***********************Server Details*****************************
 ////////////////////////////////////////////////////////////////*/
@@ -81,9 +82,11 @@ time_t cloudtime;                       //Time Library
 Servo myservo;                          //Servo
 WebSocketsClient webSocket;             //Websocket
 RTCModule rtc;                          //RTC Library
-SimpleTimer fiveSecTimer(5000);         //1 second timer
+SimpleTimer fiveSecTimer(5000);         //5 second timer
 SimpleTimer tenMinsTimer(10000);        //10 minutes timer
 MyAquariumComm comm;                    //Communication Library
+WiFiClient client;
+HTTPClient http;
 /*////////////////////////////////////////////////////////////////
 ***********************Object Creations***************************
 ////////////////////////////////////////////////////////////////*/
@@ -128,9 +131,6 @@ Function to send data over the I2C bus to the PCF8574 chip.
 ////////////////////////////////////////////////////////////////*/
 unsigned long updateTimeCloud()
 {
-  WiFiClient client;
-  HTTPClient http;
-
   http.begin(client, cloudTimeURL);  // <-- updated to use WiFiClient
   int httpCode = http.GET();
 
@@ -156,6 +156,23 @@ unsigned long updateTimeCloud()
 }
 /*////////////////////////////////////////////////////////////////
 Function that requests the current time from cloud when connected
+////////////////////////////////////////////////////////////////*/
+void updateHeartbeat()
+{
+  http.begin(client, heartbeatURL);  // <-- updated to use WiFiClient
+  http.addHeader("Content-Type", "application/json");  
+  int httpResponseCode = http.POST("");  // empty payload
+  if (httpResponseCode > 0) 
+  {
+    Serial.println("[Heartbeat] Sent successfully");
+  } else 
+  {
+    Serial.printf("[Heartbeat] Failed, code: %d\n", httpResponseCode);
+  }
+  http.end();
+}
+/*////////////////////////////////////////////////////////////////
+Function that updates heartbeat to the server
 ////////////////////////////////////////////////////////////////*/
 void startThermostat()
 {
@@ -349,7 +366,7 @@ void checkLight()
 {
   if (cloudLightFlag <= 1)
   {
-    if((hours >= 14) && (hours < (light_duration + 14)))
+    if((hours >= 14) && (hours < (cloudLightDuration + 14)))
     {
       startLight();   
     }
@@ -396,7 +413,7 @@ void checkCo2()
 {
   if (cloudCo2Flag <= 1)
   {
-    if((hours >= 11) && (hours < ((light_duration - 1) + 14)))
+    if((hours >= 11) && (hours < ((cloudLightDuration - 1) + 14)))
     {
       startCo2();   
     }
@@ -516,6 +533,7 @@ void handleFlagCommand(const String& flag, int value)
   {
     flagReset();
   }
+  else if (flag == "light_duration") cloudLightDuration = value;
 }
 /*////////////////////////////////////////////////////////////////
 Function Callback for flag commands from Flask
@@ -592,10 +610,10 @@ void checkStatusChange()
   if(serverSyncflag == 1)
   {
     comm.updateActuatorStatus(autoFeederFlag, thermostatFlag, filterFlag, lightFlag, co2Flag);
-    comm.sendFlags(cloudAutoFeederFlagStatus, cloudAutoFeederDuration, cloudSeasonSetting, cloudResetFlag);
+    comm.sendFlags(cloudAutoFeederFlagStatus, cloudAutoFeederDuration, cloudSeasonSetting, cloudResetFlag, cloudLightDuration);
     Serial.printf("Flags autoFeederFlag, thermostatFlag, filterFlag, lightFlag, co2Flag %02d:%02d:%02d:%02d:%02d\n",autoFeederFlag, thermostatFlag, filterFlag, lightFlag, co2Flag);
     Serial.printf("Flags cloudThermostatFlag, cloudFilterFlag, cloudLightFlag, cloudCo2Flag %02d:%02d:%02d:%02d\n",cloudThermostatFlag, cloudFilterFlag, cloudLightFlag, cloudCo2Flag);
-    Serial.printf("Flags cloudAutoFeederFlagStatus, cloudSeasonSetting, cloudAutoFeederDuration, cloudResetFlag %02d:%02d:%02d:%02d\n",cloudAutoFeederFlagStatus, cloudSeasonSetting, cloudAutoFeederDuration, cloudResetFlag);
+    Serial.printf("Flags cloudAutoFeederFlagStatus, cloudSeasonSetting, cloudAutoFeederDuration, cloudResetFlag, cloudLightDuration %02d:%02d:%02d:%02d:%02d\n",cloudAutoFeederFlagStatus, cloudSeasonSetting, cloudAutoFeederDuration, cloudResetFlag, cloudLightDuration);
     serverSyncflag = 0;
   }
 }
@@ -611,7 +629,7 @@ void scheduler10Min()
   {
     rtc.syncTime(epoch);
   }
-  comm.sendFlags(cloudAutoFeederFlagStatus, cloudAutoFeederDuration, cloudSeasonSetting, cloudResetFlag);
+  comm.sendFlags(cloudAutoFeederFlagStatus, cloudAutoFeederDuration, cloudSeasonSetting, cloudResetFlag, cloudLightDuration);
   //Serial.printf("Current time is %02d:%02d:%02d:%02d\n", hours, mins, secs, weekdays); 
 }
 /*////////////////////////////////////////////////////////////////
@@ -619,6 +637,7 @@ Function that schedules jobs with a frequency of 10 minutes.
 ////////////////////////////////////////////////////////////////*/
 void scheduler5Sec()
 {  
+    updateHeartbeat();  
     updateWaterTemp();
     checkFilter();
     checkLight();

@@ -1,45 +1,262 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Aquarium Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aquarium Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-gauges/gauge.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
-<body>
-    <h1>Aquarium Dashboard</h1>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+  <div class="max-w-6xl mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-6 text-center">Aquarium Dashboard</h1>
 
-    <h2>Sensors</h2>
-    <ul id="sensor-list">
+    <!-- ✅ Actuators Section -->
+    <div class="mb-6">
+      <h2 class="text-xl font-bold mb-4 text-center">Actuators</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-4 justify-items-center">
+        {% set icons = {
+          'feeder': 'utensils-crossed',
+          'thermostat': 'thermometer',
+          'filter': 'waves',
+          'co2': 'fire-extinguisher',
+          'lights': 'lightbulb',
+          'reset_flag': 'refresh-ccw'
+        } %}
+        {% set names = {
+          'feeder': 'Feeder',
+          'thermostat': 'Thermostat',
+          'filter': 'Filter',
+          'co2': 'CO₂',
+          'lights': 'Lights',
+          'reset_flag': 'Reset'
+        } %}
+
+        {% for key in ['feeder', 'thermostat', 'filter', 'co2', 'lights', 'reset_flag'] %}
+        <div class="bg-white rounded-2xl shadow-md p-4 flex justify-between items-center w-full max-w-[240px] transition-transform hover:scale-[1.02]">
+          <div class="flex flex-col">
+            <span class="text-base font-bold">{{ names[key] }}</span>
+            <label class="toggle-switch mt-2">
+              {% if key == 'reset_flag' %}
+                <input type="checkbox" id="flag-{{ key }}" onchange="updateFlag('{{ key }}')">
+              {% else %}
+                <input type="checkbox" id="{{ key }}" onchange="toggleActuator('{{ key }}')">
+              {% endif %}
+              <span class="slider"></span>
+            </label>
+          </div>
+          <i data-lucide="{{ icons[key] }}" class="w-7 h-7 text-gray-700 ml-4"></i>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- ✅ Sensor Section -->
+    <div class="bg-white rounded-2xl shadow p-4 mb-8">
+      <h2 class="text-xl font-bold mb-4 text-center">Display</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 gap-4">
+        <!-- Temperature Gauge -->
+        <div class="flex flex-col items-center">
+          <canvas id="temperatureGauge" width="240" height="240"></canvas>
+          <p class="mt-2 text-sm font-semibold">Aquarium Temperature</p>
+        </div>
+
+        <!-- Feeder Status Card -->
+        <div class="bg-gray-50 p-6 rounded-xl shadow flex flex-col justify-center items-center">
+          <p class="text-lg font-semibold text-gray-800">Feeder Status Today</p>
+          <p id="sensor-feeder_status" class="text-4xl font-bold text-blue-600 mt-2">{{ flags.feeder_status }}</p>
+        </div>
+      </div>
+
+      <!-- Other sensor values -->
+      <ul class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
         {% for key, value in sensors.items() %}
-            <li>{{ key }}: <span id="sensor-{{ key }}">{{ value }}</span></li>
+        {% if key != 'temperature' %}
+        <li class="flex justify-between">
+          <span class="capitalize">{{ key.replace('_', ' ') }}</span>
+          <span id="sensor-{{ key }}">{{ value }}</span>
+        </li>
+        {% endif %}
         {% endfor %}
-    </ul>
+      </ul>
+    </div>
 
-    <h2>Actuators</h2>
-    <ul id="actuator-list">
-        {% for key, value in actuators.items() %}
-            <li>
-                {{ key }}
-                <input type="checkbox" id="{{ key }}" {% if value %}checked{% endif %}
-                       onchange="toggleActuator('{{ key }}')">
-            </li>
-        {% endfor %}
-    </ul>
+    <!-- ✅ Flag Section with Sliders as Cards -->
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="text-xl font-bold mb-4 text-center">Settings</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 justify-items-center">
 
-    <h2>Flags</h2>
-    <ul id="flag-list">
-        {% for key, value in flags.items() %}
-            <li>
-                {{ key }}
-                {% if value is boolean %}
-                    <input type="checkbox" id="flag-{{ key }}" {% if value %}checked{% endif %}
-                           onchange="updateFlag('{{ key }}')">
-                {% else %}
-                    <input type="number" id="flag-{{ key }}" value="{{ value }}"
-                           onchange="updateFlag('{{ key }}')">
-                {% endif %}
-            </li>
-        {% endfor %}
-    </ul>
+        <!-- Feeder Duration -->
+        <div class="bg-white rounded-2xl shadow-md p-4 w-full max-w-[240px]">
+          <p class="text-base font-bold mb-2">Feeder Duration</p>
+          <input type="range" id="flag-feeder_duration" min="0" max="7" step="1"
+                value="{{ flags.feeder_duration }}" onchange="updateFlag('feeder_duration')"
+                class="w-full accent-blue-600">
+          <p id="value-flag-feeder_duration" class="text-right font-semibold text-sm mt-1">
+            {{ flags.feeder_duration }}
+          </p>
+          <p id="info-flag-feeder_duration" class="text-sm text-gray-500 mt-1">
+            {% if flags.feeder_duration == 0 %}
+              Feeder is off
+            {% elif flags.feeder_duration == 7 %}
+              Feeder triggers daily
+            {% else %}
+              Feeder triggers {{ flags.feeder_duration }} days a week
+            {% endif %}
+          </p>
+        </div>
 
-    <script src="/static/js/socket.js"></script>
+        <!-- Season Setting -->
+        <div class="bg-white rounded-2xl shadow-md p-4 w-full max-w-[240px]">
+          <p class="text-base font-bold mb-2">Season Setting</p>
+          <input type="range" id="flag-season_setting" min="0" max="4" step="1"
+                value="{{ flags.season_setting }}" onchange="updateFlag('season_setting')"
+                class="w-full accent-orange-600">
+          <p id="value-flag-season_setting" class="text-right font-semibold text-sm mt-1">
+            {{ flags.season_setting }}
+          </p>
+          <p id="info-flag-season_setting" class="text-sm text-gray-500 mt-1">
+            {% if flags.season_setting == 0 %}
+              Heating Mode Winter
+            {% elif flags.season_setting == 1 %}
+              Heating Mode Normal
+            {% elif flags.season_setting == 2 %}
+              Cooling Mode Normal
+            {% elif flags.season_setting == 3 %}
+              Cooling Mode Summer
+            {% elif flags.season_setting == 4 %}
+              Advanced Mode
+            {% endif %}
+          </p>
+        </div>
+
+        <!-- Light Duration -->
+        <div class="bg-white rounded-2xl shadow-md p-4 w-full max-w-[240px]">
+          <p class="text-base font-bold mb-2">Light Duration</p>
+          <input type="range" id="flag-light_duration" min="6" max="10" step="1"
+                value="{{ flags.light_duration }}" onchange="updateFlag('light_duration')"
+                class="w-full accent-rose-600">
+          <p id="value-flag-light_duration" class="text-right font-semibold text-sm mt-1">
+            {{ flags.light_duration }}
+          </p>
+          <p id="info-flag-light_duration" class="text-sm text-gray-500 mt-1">
+            Light remains ON for {{ flags.light_duration }} hours in a day
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="/static/js/socket.js"></script>
+  <script>
+    lucide.createIcons();
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const tempCanvas = document.getElementById("temperatureGauge");
+
+      if (tempCanvas) {
+        window.temperatureGauge = new RadialGauge({
+          renderTo: tempCanvas,
+          width: 240,
+          height: 240,
+          units: "°C",
+          minValue: 20,
+          maxValue: 35,
+          majorTicks: ["20", "25", "30", "35"],
+          minorTicks: 5,
+          strokeTicks: true,
+          highlights: [
+            { from: 20, to: 25, color: "rgba(255,0,0,.36)" },
+            { from: 25, to: 30, color: "rgba(0,255,0,.36)" },
+            { from: 30, to: 35, color: "rgba(255,0,0,.36)" }
+          ],
+          colorPlate: "#fff",
+          borderShadowWidth: 0,
+          borders: false,
+          needleType: "arrow",
+          needleWidth: 3,
+          needleCircleSize: 5,
+          needleCircleOuter: true,
+          needleCircleInner: false,
+          animationDuration: 400,
+          animationRule: "bounce",
+          value: 0,
+          valueInt: 2,
+          valueDec: 2
+        }).draw();
+      }
+    });
+
+    window.updateGauge = function (value) {
+      if (!isNaN(value) && window.temperatureGauge) {
+        window.temperatureGauge.value = value;
+      }
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const feederSlider = document.getElementById("flag-feeder_duration");
+      const feederValue = document.getElementById("value-flag-feeder_duration");
+      const feederInfo = document.getElementById("info-flag-feeder_duration");
+
+      const updateFeederInfo = (val) => {
+        feederValue.textContent = val;
+        if (val == 0) {
+          feederInfo.textContent = "Feeder is off";
+        } else if (val == 7) {
+          feederInfo.textContent = "Feeder triggers daily";
+        } else {
+          feederInfo.textContent = `Feeder triggers ${val} days a week`;
+        }
+      };
+
+      if (feederSlider) {
+        feederSlider.addEventListener("input", () => {
+          updateFeederInfo(parseInt(feederSlider.value));
+        });
+        updateFeederInfo(parseInt(feederSlider.value));
+      }
+
+      const seasonSlider = document.getElementById("flag-season_setting");
+      const seasonValue = document.getElementById("value-flag-season_setting");
+      const seasonInfo = document.getElementById("info-flag-season_setting");
+
+      const updateSeasonInfo = (val) => {
+        seasonValue.textContent = val;
+        const texts = [
+          "Heating Mode Winter",
+          "Heating Mode Normal",
+          "Cooling Mode Normal",
+          "Cooling Mode Summer",
+          "Advanced Mode"
+        ];
+        seasonInfo.textContent = texts[val] || "";
+      };
+
+      if (seasonSlider) {
+        seasonSlider.addEventListener("input", () => {
+          updateSeasonInfo(parseInt(seasonSlider.value));
+        });
+        updateSeasonInfo(parseInt(seasonSlider.value));
+      }
+
+      const lightSlider = document.getElementById("flag-light_duration");
+      const lightValue = document.getElementById("value-flag-light_duration");
+      const lightInfo = document.getElementById("info-flag-light_duration");
+
+      const updateLightInfo = (val) => {
+        lightValue.textContent = val;
+        lightInfo.textContent = `Light remains On for ${val} hours in a day`;
+      };
+
+      if (lightSlider) {
+        lightSlider.addEventListener("input", () => {
+          updateLightInfo(parseInt(lightSlider.value));
+        });
+        updateLightInfo(parseInt(lightSlider.value));
+      }
+    });
+  </script>
 </body>
 </html>

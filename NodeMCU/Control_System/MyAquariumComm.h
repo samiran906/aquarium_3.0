@@ -12,7 +12,7 @@ class MyAquariumComm {
     void loop();
     void sendSensorData(float temperature);
     void updateActuatorStatus(bool feeder, bool thermostat, bool filter, bool lights, bool CO2);
-    void sendFlags(bool feeder_status, uint8_t feeder_duration, uint8_t season_setting, bool reset_flag);
+    void sendFlags(bool feeder_status, uint8_t feeder_duration, uint8_t season_setting, bool reset_flag, uint8_t light_duration);
     void onActuatorCommand(void (*callback)(const String&, bool));
     void onFlagCommand(void (*callback)(const String&, int));
 

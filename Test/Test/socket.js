@@ -1,7 +1,7 @@
+// /static/js/socket.js
+
 const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
 const ws = new WebSocket(wsProtocol + location.host + "/ws");
-
-let suppressEvents = false;
 
 ws.onopen = () => {
     console.log("WebSocket connected to server");
@@ -11,16 +11,18 @@ ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     console.log("Received WebSocket message:", msg);
 
-    // ✅ Only suppress self-sent dashboard messages
-    if (msg.source && msg.source === "dashboard") return; // ← Prevent reacting to self
-
-    suppressEvents = true;
-
     if (msg.type === "sensor_update") {
         for (const [key, value] of Object.entries(msg.data)) {
             const el = document.getElementById("sensor-" + key);
             if (el) {
                 el.textContent = value !== null ? value : "--";
+            }
+
+            if (key === "temperature") {
+                if (window.updateGauge) {
+                    window.updateGauge(value);
+                }
+                console.log("Updating temperature gauge with value:", value);
             }
         }
     }
@@ -38,52 +40,62 @@ ws.onmessage = (event) => {
         for (const [key, value] of Object.entries(msg.data)) {
             const input = document.getElementById("flag-" + key);
             if (input) {
-                if (input.type === "checkbox") {
-                    input.checked = value;
-                } else {
-                    input.value = value;
-                }
+                input.value = value;
             }
         }
     }
-
-    suppressEvents = false;
 };
 
 ws.onerror = (error) => {
     console.error("WebSocket error:", error);
 };
 
-// ✅ Send actuator changes via WebSocket with source tag
+// ✅ Send actuator state changes to Flask
+const API_BASE = window.location.origin;
+
 function toggleActuator(name) {
-    if (suppressEvents) return;
     const checkbox = document.getElementById(name);
     const state = checkbox.checked;
 
-    const msg = {
-        type: "actuator_status",
-        source: "dashboard",
-        data: { [name]: state }
-    };
-    ws.send(JSON.stringify(msg));
+    fetch(`${API_BASE}/api/actuators/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: state })
+    })
+    .then(response => response.json())
+    .then(data => console.log("Actuator update:", data))
+    .catch(err => console.error("Fetch error:", err));
 }
 
-// ✅ Send flag changes via WebSocket with source tag
+// ✅ Send updated flag value to Flask
 function updateFlag(name) {
-    if (suppressEvents) return;
     const input = document.getElementById("flag-" + name);
-    let value;
+    const value = input.value;
 
-    if (input.type === "checkbox") {
-        value = input.checked;
-    } else {
-        value = parseInt(input.value, 10);
-    }
+    fetch(`${API_BASE}/api/flags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [name]: value })
+    })
+    .then(response => response.json())
+    .then(data => console.log("Flag update:", data))
+    .catch(err => console.error("Flag update error:", err));
+}
 
-    const msg = {
-        type: "flag_status",
-        source: "dashboard",
-        data: { [name]: value }
-    };
-    ws.send(JSON.stringify(msg));
+// ✅ Momentarily trigger the reset_flag to true and auto-uncheck the UI
+function triggerResetFlag() {
+    fetch(`${API_BASE}/api/flags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset_flag: true })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log("Reset flag triggered:", data);
+        setTimeout(() => {
+            const checkbox = document.getElementById("reset_flag");
+            if (checkbox) checkbox.checked = false;
+        }, 1000); // Reset visually after 1 second
+    })
+    .catch(err => console.error("Reset flag error:", err));
 }

@@ -2,7 +2,7 @@
 
 SENSORS = ['temperature']
 ACTUATORS = ['feeder', 'thermostat', 'filter', 'CO2', 'lights']
-FLAGS = ['feeder_status', 'feeder_duration', 'season_setting', 'reset_flag' ,'light_duration']
+FLAGS = ['feeder_status', 'feeder_duration', 'season_setting', 'reset_flag']
 
 # SQLite DB file
 DB_FILE = 'data/sensor_data.db'

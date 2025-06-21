@@ -67,7 +67,7 @@ void MyAquariumComm::updateActuatorStatus(bool feeder, bool thermostat, bool fil
   webSocket.sendTXT(message);
 }
 
-void MyAquariumComm::sendFlags(bool feeder_status, uint8_t feeder_duration, uint8_t season_setting, bool reset_flag) {
+void MyAquariumComm::sendFlags(bool feeder_status, uint8_t feeder_duration, uint8_t season_setting, bool reset_flag, uint8_t light_duration) {
   StaticJsonDocument<256> doc;
   doc["type"] = "flag_status";
   doc["source"] = "device";  // <-- NEW
@@ -76,6 +76,7 @@ void MyAquariumComm::sendFlags(bool feeder_status, uint8_t feeder_duration, uint
   data["feeder_duration"] = feeder_duration;
   data["season_setting"] = season_setting;
   data["reset_flag"] = reset_flag;
+  data["light_duration"] = light_duration;
 
   String message;
   serializeJson(doc, message);
