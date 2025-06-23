@@ -11,6 +11,7 @@
 #include <ESP8266HTTPClient.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
+#include <ArduinoOTA.h>
 #include "RTCModule.h"
 #include <WiFiClient.h> 
 #include <time.h>
@@ -36,6 +37,7 @@ bool autoFeederFlag = 0;
 bool thermostatFlag = 0;
 bool thermostatFlag10min = 0;
 bool serverSyncflag = 0;
+bool ledState = 0;
 /*////////////////////////////////////////////////////////////////
 *************Variables for storing local flag values**************
 ////////////////////////////////////////////////////////////////*/
@@ -60,6 +62,17 @@ uint8_t i2cData = 0xFF;
 const int16_t I2C_SLAVE = 0x27;
 
 double water_temp = 0;
+unsigned long lastBlinkTime = 0;
+
+enum ledStatus
+{
+  WIFI_CONNECTING,
+  WIFI_CONNECTED,
+  WS_CONNECTED,
+  WS_DISCONNECTED,
+  OTA_UPDATE
+};
+ledStatus currentStatus = WIFI_CONNECTING;
 /*////////////////////////////////////////////////////////////////
 *************Other Global Variable Declarations******************
 ////////////////////////////////////////////////////////////////*/
@@ -83,12 +96,12 @@ Servo myservo;                          //Servo
 WebSocketsClient webSocket;             //Websocket
 RTCModule rtc;                          //RTC Library
 SimpleTimer fiveSecTimer(5000);         //5 second timer
-SimpleTimer tenMinsTimer(10000);        //10 minutes timer
+SimpleTimer tenMinsTimer(600000);       //10 minutes timer
 MyAquariumComm comm;                    //Communication Library
 WiFiClient client;
 HTTPClient http;
 /*////////////////////////////////////////////////////////////////
-***********************Object Creations***************************
+**********************Object Creations **************************
 ////////////////////////////////////////////////////////////////*/
 void dailyReset()
 {
@@ -105,11 +118,64 @@ void dailyReset()
 Function to Daily reset all concerned Flags at various time 
 intervals.
 ////////////////////////////////////////////////////////////////*/
+void setCommStatus(bool connected) 
+{
+  currentStatus = connected ? WS_CONNECTED : WS_DISCONNECTED;
+}
+/*////////////////////////////////////////////////////////////////
+Function that sets WS connection status from MyAquariumComm.cpp 
+based on onWebSocketEvent
+////////////////////////////////////////////////////////////////*/
+void updateLEDStatus() 
+{
+  unsigned long now = millis();
+
+  switch (currentStatus) 
+  {
+    case WIFI_CONNECTING:
+      if (now - lastBlinkTime >= 200) 
+      {
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState);
+        lastBlinkTime = now;
+      }
+      break;
+    case WIFI_CONNECTED:
+      if (now - lastBlinkTime >= 500) 
+      {
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState);
+        lastBlinkTime = now;
+      }
+      break;
+    case WS_CONNECTED:
+      digitalWrite(LED_BUILTIN, LOW);
+      break;
+    case WS_DISCONNECTED:
+      if (now - lastBlinkTime >= 1000) 
+      {
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState);
+        lastBlinkTime = now;
+      }
+      break;
+    case OTA_UPDATE:
+      if (now - lastBlinkTime >= 100) 
+      {
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState);
+        lastBlinkTime = now;
+      }
+      break;
+  }
+}
+/*////////////////////////////////////////////////////////////////
+Function to display system statsus using LED manipulation
+////////////////////////////////////////////////////////////////*/
 void updateWaterTemp()
 {
   sensors.requestTemperatures();
-  //water_temp = sensors.getTempCByIndex(0);
-   water_temp = water_temp + 1.0;
+  water_temp = sensors.getTempCByIndex(0);
   if(water_temp >= 0)
   {
     comm.sendSensorData(water_temp);  // Send sensor data
@@ -662,18 +728,33 @@ void setup()
   myservo.detach();
 
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);  // Ensure LED is off initially
+  currentStatus = WIFI_CONNECTING;
   
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi...");
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // toggle LED
+  while (WiFi.status() != WL_CONNECTED) 
+  {
+    updateLEDStatus();
     Serial.print(".");
   }
   Serial.println("\nWiFi connected");
+  currentStatus = WIFI_CONNECTED;
   
   sensors.begin();
+
+  ArduinoOTA.onStart([]() 
+  {
+    currentStatus = OTA_UPDATE;
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+  {
+    updateLEDStatus();
+  });
+
+  ArduinoOTA.begin();
   
   unsigned long epoch = updateTimeCloud();
   if (epoch > 0) 
@@ -691,6 +772,7 @@ Setup and Initialization function for all Functionalities.
 
 void loop() 
 {
+  ArduinoOTA.handle();  // Required to keep OTA active
   comm.loop();
   if (fiveSecTimer.isElapsed()) 
   {
@@ -701,6 +783,7 @@ void loop()
   {
     scheduler10Min();
   }
+  updateLEDStatus();
 }
 /*////////////////////////////////////////////////////////////////
 Infinite Loop function to continuosly update cloud and timers.

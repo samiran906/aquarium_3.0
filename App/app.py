@@ -1,7 +1,8 @@
 # app.py
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_sock import Sock
 from flask_cors import CORS
+from config import PASSKEY
 import json, time, sqlite3, os
 from config import SENSORS, ACTUATORS, FLAGS, DB_FILE, STATE_FILE
 
@@ -16,6 +17,11 @@ sensor_data = {sen: None for sen in SENSORS}
 
 # WebSocket clients
 ws_clients = []
+
+# Heartbeat tracking
+last_heartbeat = 0  # epoch timestamp of last heartbeat
+
+app.secret_key = 'Voldemort@5400'  # needed for sessions
 
 # --- Ensure SQLite DB setup ---
 def init_db():
@@ -42,7 +48,22 @@ if os.path.exists(STATE_FILE):
 # --- Flask Routes ---
 @app.route('/')
 def dashboard():
+    if session.get("authenticated") != True:
+        return redirect(url_for('login'))
     return render_template('dashboard.html', sensors=sensor_data, actuators=state, flags=flag_data)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        entered = request.form.get("passkey", "").lower()
+        if entered == PASSKEY:
+            session['authenticated'] = True
+            return redirect(url_for('dashboard'))
+        else:
+            error = "Incorrect passkey"
+    return render_template('login.html', error=error)
+
 
 @app.route('/api/sensors', methods=['POST'])
 def update_sensors():
@@ -133,6 +154,25 @@ def update_flags():
 @app.route('/api/time')
 def get_time():
     return jsonify({"epoch": int(time.time())})
+
+# --- Heartbeat routes ---
+@app.route('/heartbeat', methods=['POST'])
+def heartbeat():
+    global last_heartbeat
+    last_heartbeat = time.time()
+    # Broadcast to clients if needed
+    msg = json.dumps({'type': 'heartbeat', 'data': 'online'})
+    broadcast(msg)
+    return jsonify({'status': 'heartbeat received'}), 200
+
+@app.route('/api/heartbeat')
+def get_heartbeat():
+    now = time.time()
+    online = (now - last_heartbeat) < 10  # Considered online if < 10s
+    return jsonify({
+        'status': 'online' if online else 'offline',
+        'last_heartbeat': int(last_heartbeat)
+    })
 
 # --- WebSocket Handler ---
 @sock.route('/ws')

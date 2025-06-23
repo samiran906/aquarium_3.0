@@ -3,6 +3,8 @@
 #include <ESP8266HTTPClient.h>
 #include <WebSocketsClient.h>
 
+extern void setCommStatus(bool connected);
+
 MyAquariumComm::MyAquariumComm() {}
 
 void MyAquariumComm::begin(const char* host, int port, const char* path) {
@@ -110,5 +112,15 @@ void MyAquariumComm::onWebSocketEvent(WStype_t type, uint8_t* payload, size_t le
         flagCallback(name, value);
       }
     }
+  }
+  // NEW: handle connection status
+  if (type == WStype_CONNECTED) {
+    Serial.println("[WebSocket] Connected");
+    setCommStatus(true);  // Notify sketch: connection established
+  }
+
+  if (type == WStype_DISCONNECTED) {
+    Serial.println("[WebSocket] Disconnected");
+    setCommStatus(false);  // Notify sketch: disconnected
   }
 }
